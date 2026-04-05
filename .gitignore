@@ -1,0 +1,34 @@
+# dependencies
+**/node_modules/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# env files
+.env
+.env.*
+!.env.example
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# build artifacts
+**/dist/
+**/build/
+**/.cache/
+
+# runtime files
+coverage/
+
+# local Xray binaries (keep docs/placeholders tracked)
+resources/xray/**/xray
+resources/xray/**/xray.exe
+mobile/android/app/src/main/assets/xray
+mobile/ios/xray
