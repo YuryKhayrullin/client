@@ -5,7 +5,10 @@
   "scripts": {
     "start": "react-native start",
     "android": "react-native run-android",
-    "ios": "react-native run-ios"
+    "ios": "react-native run-ios",
+    "android:prepare-xray": "bash scripts/prepare-xray-android.sh",
+    "apk:debug": "npm run android:prepare-xray && cd android && ./gradlew assembleDebug",
+    "apk:release": "npm run android:prepare-xray && cd android && ./gradlew assembleRelease"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^1.23.1",

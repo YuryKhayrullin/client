@@ -1,4 +1,4 @@
-package com.client.xray;
+package com.clientmobiletemplate.xray;
 
 import com.facebook.react.ReactPackage;
 import com.facebook.react.bridge.NativeModule;

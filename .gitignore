@@ -31,4 +31,6 @@ coverage/
 resources/xray/**/xray
 resources/xray/**/xray.exe
 mobile/android/app/src/main/assets/xray
+mobile/android/app/src/main/assets/xray-arm64-v8a
+mobile/android/app/src/main/assets/xray-amd64
 mobile/ios/xray

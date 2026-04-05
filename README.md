@@ -1,52 +1,84 @@
-# Minimal Xray Client (Simplified)
+# Minimal Xray Client
 
-## Structure
+Cross-platform personal-use scaffold:
+
+- Mobile: React Native (Android/iOS)
+- Desktop: Electron
+- Networking engine: Xray-core as external process
+
+## Project Structure
 
 ```text
 /shared
-  ?? config.js
-  ?? xrayManager.js
+  config.js
+  xrayManager.js
 
 /mobile
-  ?? App.js
-  ?? native/
-  ?   ?? android/
-  ?   ?? ios/
+  App.js
+  android/
+  native/
+    android/
+    ios/
+  scripts/
 
 /desktop
-  ?? main.js
-  ?? renderer.js
+  main.js
+  renderer.js
 
 /resources
-  ?? xray/
+  xray/
+    windows/
+    linux/
 ```
 
-## Where to put binaries
+## Download Ready APK (Recommended)
 
-- Android: put `xray` in your real RN app assets (`android/app/src/main/assets/xray`)
-- iOS: put `xray` in app bundle resources
-- Windows: put `xray.exe` in `resources/xray/windows/xray.exe`
+A GitHub Actions workflow builds APK automatically.
 
-## Single manager
+1. Push changes to `main` (or run workflow manually in Actions tab).
+2. Open GitHub repo -> `Actions` -> `Build Android APK`.
+3. Open latest successful run.
+4. Download artifact: `client-mobile-debug-apk`.
+5. Inside artifact, install `app-debug.apk` on Android.
 
-`shared/xrayManager.js` contains:
+Workflow file:
 
-- `DesktopXrayProcessManager` for Electron main process
-- `createDesktopRendererManager(ipcRenderer)` for Electron renderer
-- `createMobileManager(NativeModules)` for React Native
+- `.github/workflows/build-android-apk.yml`
 
-## Run
-
-### Mobile
+## Local APK Build
 
 ```bash
 cd mobile
 npm install
-npm run android
-# or npm run ios
+npm run apk:debug
 ```
 
-### Desktop
+APK output:
+
+- `mobile/android/app/build/outputs/apk/debug/app-debug.apk`
+
+## Android Xray Binary Assets
+
+Before build, script downloads official Android binaries into assets:
+
+```bash
+cd mobile
+npm run android:prepare-xray
+```
+
+Assets created:
+
+- `mobile/android/app/src/main/assets/xray-arm64-v8a`
+- `mobile/android/app/src/main/assets/xray-amd64`
+
+## Run App (Debug)
+
+```bash
+cd mobile
+npm run android
+```
+
+## Desktop Run
 
 ```bash
 cd desktop

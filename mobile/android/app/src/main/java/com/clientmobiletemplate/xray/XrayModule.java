@@ -1,4 +1,4 @@
-package com.client.xray;
+package com.clientmobiletemplate.xray;
 
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.Promise;
@@ -99,7 +99,18 @@ public class XrayModule extends ReactContextBaseJavaModule {
             return binary;
         }
 
-        try (InputStream input = reactContext.getAssets().open("xray");
+        String abi = android.os.Build.SUPPORTED_ABIS.length > 0 ? android.os.Build.SUPPORTED_ABIS[0] : "arm64-v8a";
+        String assetName;
+        if (abi.contains("arm64")) {
+            assetName = "xray-arm64-v8a";
+        } else if (abi.contains("x86_64") || abi.contains("amd64")) {
+            assetName = "xray-amd64";
+        } else {
+            // fallback to arm64 for most physical devices
+            assetName = "xray-arm64-v8a";
+        }
+
+        try (InputStream input = reactContext.getAssets().open(assetName);
              FileOutputStream output = new FileOutputStream(binary)) {
             byte[] buffer = new byte[8192];
             int length;
