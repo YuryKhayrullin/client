@@ -12,8 +12,21 @@ echo "Preparing Xray Android binaries ($XRAY_TAG)..."
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-curl -fL -o "$TMP_DIR/xray-arm64.zip" "https://github.com/XTLS/Xray-core/releases/download/$XRAY_TAG/Xray-android-arm64-v8a.zip"
-curl -fL -o "$TMP_DIR/xray-amd64.zip" "https://github.com/XTLS/Xray-core/releases/download/$XRAY_TAG/Xray-android-amd64.zip"
+download_with_resume() {
+  local url="$1"
+  local out="$2"
+  echo "Downloading $(basename "$out")..."
+  curl -fL \
+    --retry 8 \
+    --retry-delay 2 \
+    --retry-all-errors \
+    -C - \
+    -o "$out" \
+    "$url"
+}
+
+download_with_resume "https://github.com/XTLS/Xray-core/releases/download/$XRAY_TAG/Xray-android-arm64-v8a.zip" "$TMP_DIR/xray-arm64.zip"
+download_with_resume "https://github.com/XTLS/Xray-core/releases/download/$XRAY_TAG/Xray-android-amd64.zip" "$TMP_DIR/xray-amd64.zip"
 
 python3 - <<'PY' "$TMP_DIR/xray-arm64.zip" "$TMP_DIR/xray-amd64.zip" "$ASSETS_DIR"
 import sys, zipfile
