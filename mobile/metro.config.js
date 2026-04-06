@@ -1,5 +1,3 @@
-const path = require("path");
+const { getDefaultConfig, mergeConfig } = require("@react-native/metro-config");
 
-module.exports = {
-  watchFolders: [path.resolve(__dirname, "../shared")]
-};
+module.exports = mergeConfig(getDefaultConfig(__dirname), {});

@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APKs
 
 on:
   workflow_dispatch:
@@ -7,11 +7,10 @@ on:
       - main
     paths:
       - 'mobile/**'
-      - 'shared/**'
       - '.github/workflows/build-android-apk.yml'
 
 jobs:
-  build-apk:
+  build-apks:
     runs-on: ubuntu-latest
 
     steps:
@@ -46,9 +45,20 @@ jobs:
         working-directory: mobile/android
         run: chmod +x ./gradlew && ./gradlew assembleDebug --no-daemon
 
-      - name: Upload APK artifact
+      - name: Build release APK
+        working-directory: mobile/android
+        run: chmod +x ./gradlew && ./gradlew assembleRelease --no-daemon
+
+      - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: client-mobile-debug-apk
+          name: horizon-tunnel-debug-apk
           path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: horizon-tunnel-release-apk
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
