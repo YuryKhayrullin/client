@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   SafeAreaView,
   ScrollView,
@@ -9,6 +9,8 @@ import {
   TouchableOpacity,
   View
 } from "react-native";
+import Clipboard from "@react-native-clipboard/clipboard";
+import { CameraScreen } from "react-native-camera-kit";
 
 import SignalOrb from "../components/SignalOrb";
 import StatusBadge from "../components/StatusBadge";
@@ -67,11 +69,68 @@ export default function HomeScreen() {
     setImportLinkText,
     updateSimpleField,
     importLink,
+    importFromClipboard,
+    importFromQr,
     save,
     switchMode,
     refreshStatus,
     toggleConnection
   } = useProxyController();
+
+  const [scannerVisible, setScannerVisible] = useState(false);
+  const [scanBusy, setScanBusy] = useState(false);
+
+  async function handleClipboardImport() {
+    try {
+      const text = await Clipboard.getString();
+      await importFromClipboard(text);
+      if (!running) {
+        await toggleConnection();
+      }
+    } catch (_error) {}
+  }
+
+  async function handleScanRead(event) {
+    if (scanBusy) return;
+
+    const value = String(event?.nativeEvent?.codeStringValue || "").trim();
+    if (!value) return;
+
+    setScanBusy(true);
+    try {
+      await importFromQr(value);
+      setScannerVisible(false);
+      if (!running) {
+        await toggleConnection();
+      }
+    } catch (_error) {
+    } finally {
+      setTimeout(() => setScanBusy(false), 500);
+    }
+  }
+
+  if (scannerVisible) {
+    return (
+      <SafeAreaView style={styles.scannerRoot}>
+        <StatusBar barStyle="light-content" />
+        <View style={styles.scannerHeader}>
+          <Text style={styles.scannerTitle}>??????????? QR</Text>
+          <TouchableOpacity onPress={() => setScannerVisible(false)} style={styles.scannerCloseButton}>
+            <Text style={styles.scannerCloseLabel}>???????</Text>
+          </TouchableOpacity>
+        </View>
+        <CameraScreen
+          scanBarcode
+          onReadCode={handleScanRead}
+          showFrame
+          laserColor="#2f7bff"
+          frameColor="#deecff"
+          style={styles.scannerCamera}
+        />
+        <Text style={styles.scannerHint}>???????? ?????? ?? QR-??? ? vless://, vmess:// ??? https:// ?????????</Text>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.root}>
@@ -102,21 +161,33 @@ export default function HomeScreen() {
             <View style={styles.simpleBlock}>
               <View style={styles.importCard}>
                 <Text style={styles.importTitle}>Quick import</Text>
-                <Text style={styles.importText}>Paste a `vless://` or `vmess://` link and fill the profile automatically.</Text>
+                <Text style={styles.importText}>Paste vless://, vmess:// or https:// subscription and profile will fill automatically.</Text>
                 <TextInput
                   multiline
                   value={importLinkText}
                   onChangeText={setImportLinkText}
                   autoCapitalize="none"
                   autoCorrect={false}
-                  placeholder="vless://... or vmess://..."
+                  placeholder="vless://... vmess://... or https://..."
                   placeholderTextColor="#7b8191"
                   style={styles.linkInput}
                   textAlignVertical="top"
                 />
-                <TouchableOpacity disabled={busy} onPress={importLink} style={styles.importButton}>
-                  <Text style={styles.importButtonLabel}>Import Link</Text>
-                </TouchableOpacity>
+                <View style={styles.importActionsRow}>
+                  <TouchableOpacity disabled={busy} onPress={importLink} style={styles.importButton}>
+                    <Text style={styles.importButtonLabel}>Import Link</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity disabled={busy} onPress={handleClipboardImport} style={styles.secondaryButton}>
+                    <Text style={styles.secondaryButtonLabel}>????? ??????</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    disabled={busy}
+                    onPress={() => setScannerVisible(true)}
+                    style={styles.secondaryButton}
+                  >
+                    <Text style={styles.secondaryButtonLabel}>??????????? QR</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <LabeledInput
@@ -324,8 +395,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     backgroundColor: "#ffffff"
   },
+  importActionsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8
+  },
   importButton: {
-    alignSelf: "flex-start",
     backgroundColor: "#173f9a",
     borderRadius: 10,
     paddingHorizontal: 14,
@@ -335,6 +410,17 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontWeight: "800",
     fontSize: 13
+  },
+  secondaryButton: {
+    backgroundColor: "#dbe6fb",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10
+  },
+  secondaryButtonLabel: {
+    color: "#183869",
+    fontWeight: "800",
+    fontSize: 12
   },
   inputWrap: {
     gap: 6
@@ -408,5 +494,41 @@ const styles = StyleSheet.create({
     color: "#9e2a2a",
     fontSize: 12,
     fontWeight: "600"
+  },
+  scannerRoot: {
+    flex: 1,
+    backgroundColor: "#061023"
+  },
+  scannerHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12
+  },
+  scannerTitle: {
+    color: "#ecf3ff",
+    fontSize: 18,
+    fontWeight: "800"
+  },
+  scannerCloseButton: {
+    borderRadius: 10,
+    backgroundColor: "#1f355f",
+    paddingHorizontal: 12,
+    paddingVertical: 8
+  },
+  scannerCloseLabel: {
+    color: "#ffffff",
+    fontWeight: "700"
+  },
+  scannerCamera: {
+    flex: 1
+  },
+  scannerHint: {
+    color: "#b8c8e5",
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    textAlign: "center",
+    fontSize: 12
   }
 });

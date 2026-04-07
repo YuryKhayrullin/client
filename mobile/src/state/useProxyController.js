@@ -8,7 +8,8 @@ import {
   importProxyLink,
   normalizeJsonConfig,
   profileToConfigText,
-  sanitizeProfile
+  sanitizeProfile,
+  extractProxyLinksFromText
 } from "../config/configCodec";
 
 const STORAGE_KEYS = {
@@ -25,6 +26,14 @@ async function persistState(profile, configText, mode, importLinkText) {
     [STORAGE_KEYS.mode, mode],
     [STORAGE_KEYS.importLink, importLinkText]
   ]);
+}
+
+function firstLinkFromText(text) {
+  const links = extractProxyLinksFromText(text);
+  if (!links.length) {
+    throw new Error("No vless:// or vmess:// link found.");
+  }
+  return links[0];
 }
 
 export function useProxyController() {
@@ -90,24 +99,68 @@ export function useProxyController() {
     setProfile((prev) => ({ ...prev, [field]: value }));
   }
 
+  async function importLinkFromKey(linkValue, sourceLabel = "link") {
+    const imported = importProxyLink(linkValue);
+    const normalized = normalizeJsonConfig(imported.configText);
+
+    setProfile(imported.profile);
+    setConfigText(normalized);
+    setMode("simple");
+
+    await Promise.all([
+      proxyCore.saveConfig(normalized),
+      persistState(imported.profile, normalized, "simple", linkValue)
+    ]);
+
+    setImportLinkText(linkValue);
+    setMessage(`Imported from ${sourceLabel}: ${imported.profile.name}`);
+    return normalized;
+  }
+
+  async function importFromAnyText(rawText, sourceLabel = "input") {
+    const text = String(rawText || "").trim();
+    if (!text) {
+      throw new Error("Input is empty.");
+    }
+
+    if (/^https?:\/\//i.test(text)) {
+      const response = await fetch(text);
+      if (!response.ok) {
+        throw new Error(`Subscription URL failed (${response.status}).`);
+      }
+
+      const payload = await response.text();
+      const firstLink = firstLinkFromText(payload);
+      return importLinkFromKey(firstLink, sourceLabel);
+    }
+
+    const firstLink = firstLinkFromText(text);
+    return importLinkFromKey(firstLink, sourceLabel);
+  }
+
   async function importLink() {
     try {
-      const imported = importProxyLink(importLinkText);
-      const normalized = normalizeJsonConfig(imported.configText);
-
-      setProfile(imported.profile);
-      setConfigText(normalized);
-      setMode("simple");
-
-      await Promise.all([
-        proxyCore.saveConfig(normalized),
-        persistState(imported.profile, normalized, "simple", importLinkText)
-      ]);
-
-      setMessage(`Imported ${imported.profile.name}`);
-      return normalized;
+      return await importFromAnyText(importLinkText, "manual");
     } catch (error) {
       setMessage(`Import failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async function importFromClipboard(textFromClipboard) {
+    try {
+      return await importFromAnyText(textFromClipboard, "clipboard");
+    } catch (error) {
+      setMessage(`Clipboard import failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async function importFromQr(textFromQr) {
+    try {
+      return await importFromAnyText(textFromQr, "qr");
+    } catch (error) {
+      setMessage(`QR import failed: ${error.message}`);
       throw error;
     }
   }
@@ -238,6 +291,8 @@ export function useProxyController() {
     setImportLinkText,
     updateSimpleField,
     importLink,
+    importFromClipboard,
+    importFromQr,
     save,
     switchMode,
     refreshStatus,

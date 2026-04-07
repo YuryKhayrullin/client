@@ -184,10 +184,29 @@ function importProxyLink(input) {
   };
 }
 
+function extractProxyLinksFromText(input) {
+  const text = String(input || "").trim();
+  if (!text) return [];
+
+  const directMatches = text.match(/(?:vless|vmess):\/\/[^\s\"'<>\(\)]+/gi) || [];
+  if (directMatches.length > 0) {
+    return directMatches.map((item) => item.trim());
+  }
+
+  try {
+    const decoded = Buffer.from(text, "base64").toString("utf8");
+    const fromDecoded = decoded.match(/(?:vless|vmess):\/\/[^\s\"'<>\(\)]+/gi) || [];
+    return fromDecoded.map((item) => item.trim());
+  } catch (_error) {
+    return [];
+  }
+}
+
 module.exports = {
   normalizeJsonConfig,
   sanitizeProfile,
   profileToConfigText,
   configTextToProfile,
-  importProxyLink
+  importProxyLink,
+  extractProxyLinksFromText
 };
