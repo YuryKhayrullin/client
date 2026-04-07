@@ -114,9 +114,9 @@ export default function HomeScreen() {
       <SafeAreaView style={styles.scannerRoot}>
         <StatusBar barStyle="light-content" />
         <View style={styles.scannerHeader}>
-          <Text style={styles.scannerTitle}>??????????? QR</Text>
+          <Text style={styles.scannerTitle}>Scan QR</Text>
           <TouchableOpacity onPress={() => setScannerVisible(false)} style={styles.scannerCloseButton}>
-            <Text style={styles.scannerCloseLabel}>???????</Text>
+            <Text style={styles.scannerCloseLabel}>Close</Text>
           </TouchableOpacity>
         </View>
         <CameraScreen
@@ -127,7 +127,7 @@ export default function HomeScreen() {
           frameColor="#deecff"
           style={styles.scannerCamera}
         />
-        <Text style={styles.scannerHint}>???????? ?????? ?? QR-??? ? vless://, vmess:// ??? https:// ?????????</Text>
+        <Text style={styles.scannerHint}>Point camera at a QR code with vless://, vmess:// or https:// subscription</Text>
       </SafeAreaView>
     );
   }
@@ -178,14 +178,14 @@ export default function HomeScreen() {
                     <Text style={styles.importButtonLabel}>Import Link</Text>
                   </TouchableOpacity>
                   <TouchableOpacity disabled={busy} onPress={handleClipboardImport} style={styles.secondaryButton}>
-                    <Text style={styles.secondaryButtonLabel}>????? ??????</Text>
+                    <Text style={styles.secondaryButtonLabel}>Clipboard</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     disabled={busy}
                     onPress={() => setScannerVisible(true)}
                     style={styles.secondaryButton}
                   >
-                    <Text style={styles.secondaryButtonLabel}>??????????? QR</Text>
+                    <Text style={styles.secondaryButtonLabel}>Scan QR</Text>
                   </TouchableOpacity>
                 </View>
               </View>

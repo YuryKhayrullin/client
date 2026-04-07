@@ -2,7 +2,7 @@ const DEFAULT_PROFILE = {
   name: "Primary",
   server: "example.com",
   port: 443,
-  uuid: "00000000-0000-0000-0000-000000000000",
+  uuid: "11111111-1111-4111-8111-111111111111",
   sni: "example.com",
   security: "tls",
   alpn: "h2,http/1.1"

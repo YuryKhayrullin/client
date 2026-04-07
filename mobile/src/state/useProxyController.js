@@ -36,6 +36,14 @@ function firstLinkFromText(text) {
   return links[0];
 }
 
+function normalizeProfileOrDefault(input) {
+  try {
+    return sanitizeProfile(input || DEFAULT_PROFILE);
+  } catch (_error) {
+    return sanitizeProfile(DEFAULT_PROFILE);
+  }
+}
+
 export function useProxyController() {
   const [profile, setProfile] = useState(DEFAULT_PROFILE);
   const [configText, setConfigText] = useState(DEFAULT_CONFIG_TEXT);
@@ -70,7 +78,8 @@ export function useProxyController() {
         const normalized = normalizeJsonConfig(storedConfig);
         const storedMode = map[STORAGE_KEYS.mode] || "simple";
         const parsedProfile = map[STORAGE_KEYS.profile] ? JSON.parse(map[STORAGE_KEYS.profile]) : null;
-        const nextProfile = parsedProfile || configTextToProfile(normalized) || DEFAULT_PROFILE;
+        const detectedProfile = configTextToProfile(normalized);
+        const nextProfile = normalizeProfileOrDefault(parsedProfile || detectedProfile || DEFAULT_PROFILE);
         const status = await proxyCore.getStatus();
 
         if (!active) return;
@@ -78,10 +87,12 @@ export function useProxyController() {
         setConfigText(normalized);
         setMode(storedMode === "advanced" ? "advanced" : "simple");
         setImportLinkText(map[STORAGE_KEYS.importLink] || "");
-        setProfile(sanitizeProfile(nextProfile));
+        setProfile(nextProfile);
         setRunning(Boolean(status.running));
         setStatusDetails(status);
         setMessage(status.running ? "Tunnel is running" : "Disconnected");
+
+        await AsyncStorage.setItem(STORAGE_KEYS.profile, JSON.stringify(nextProfile));
       } catch (error) {
         if (!active) return;
         setRunning(false);
