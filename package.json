@@ -1,0 +1,12 @@
+{
+  "name": "client-root",
+  "private": true,
+  "scripts": {
+    "install:mobile": "npm --prefix mobile install",
+    "start": "npm --prefix mobile run start",
+    "android": "npm --prefix mobile run android",
+    "android:prepare-xray": "npm --prefix mobile run android:prepare-xray",
+    "apk:debug": "bash -lc 'export JAVA_HOME=$(pwd)/.tooling/jdk17 && export ANDROID_HOME=$(pwd)/.tooling/android-sdk && export ANDROID_SDK_ROOT=$(pwd)/.tooling/android-sdk && npm --prefix mobile run apk:debug'",
+    "apk:release": "bash -lc 'export JAVA_HOME=$(pwd)/.tooling/jdk17 && export ANDROID_HOME=$(pwd)/.tooling/android-sdk && export ANDROID_SDK_ROOT=$(pwd)/.tooling/android-sdk && npm --prefix mobile run apk:release'"
+  }
+}
