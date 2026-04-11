@@ -6,7 +6,13 @@ const FALLBACK_STATUS = {
   logPath: "",
   configPath: "",
   startedAtMs: 0,
-  lastError: ""
+  lastError: "",
+  processExitCode: null,
+  lastProbeTarget: "",
+  lastProbeAtMs: 0,
+  lastProbeLatencyMs: 0,
+  lastProbeOk: false,
+  lastProbeError: ""
 };
 
 function createMissingBridge() {
@@ -22,6 +28,9 @@ function createMissingBridge() {
     getStatus: async () => FALLBACK_STATUS,
     loadConfig: async () => "",
     saveConfig: async () => {
+      throw error;
+    },
+    checkServerReachable: async () => {
       throw error;
     }
   };
@@ -61,11 +70,20 @@ async function saveConfig(configText) {
   return bridge.saveConfig(configText);
 }
 
+async function checkServerReachable(host, port, timeoutMs = 4500) {
+  if (typeof bridge.checkServerReachable !== "function") {
+    throw new Error("Native server probe is not available. Rebuild Android app.");
+  }
+
+  return bridge.checkServerReachable(String(host || ""), Number(port), Number(timeoutMs));
+}
+
 export default {
   start,
   stop,
   restart,
   getStatus,
   loadConfig,
-  saveConfig
+  saveConfig,
+  checkServerReachable
 };

@@ -9,7 +9,8 @@ import {
   normalizeJsonConfig,
   profileToConfigText,
   sanitizeProfile,
-  extractProxyLinksFromText
+  extractProxyLinksFromText,
+  extractPrimaryEndpointFromConfig
 } from "../config/configCodec";
 
 const STORAGE_KEYS = {
@@ -18,6 +19,10 @@ const STORAGE_KEYS = {
   mode: "android_proxy_mode_v2",
   importLink: "android_proxy_import_link_v1"
 };
+
+const SUBSCRIPTION_FETCH_TIMEOUT_MS = 12000;
+const SERVER_PROBE_TIMEOUT_MS = 4500;
+const MAX_SUBSCRIPTION_CHARS = 2 * 1024 * 1024;
 
 async function persistState(profile, configText, mode, importLinkText) {
   await AsyncStorage.multiSet([
@@ -36,12 +41,111 @@ function firstLinkFromText(text) {
   return links[0];
 }
 
+function splitList(value) {
+  return String(value || "")
+    .split(/[\n,;]/g)
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 function normalizeProfileOrDefault(input) {
   try {
     return sanitizeProfile(input || DEFAULT_PROFILE);
   } catch (_error) {
     return sanitizeProfile(DEFAULT_PROFILE);
   }
+}
+
+function hostMatchesAllowToken(hostname, token) {
+  if (!hostname || !token) return false;
+  if (hostname === token) return true;
+  if (token.startsWith("*.")) {
+    const bare = token.slice(2);
+    return hostname === bare || hostname.endsWith(`.${bare}`);
+  }
+  return hostname.endsWith(`.${token}`);
+}
+
+function assertHttpHostAllowed(urlObject, allowHostsRaw) {
+  if (urlObject.protocol !== "http:") {
+    return;
+  }
+
+  const host = String(urlObject.hostname || "").trim().toLowerCase();
+  const allowHosts = splitList(allowHostsRaw);
+  const allowed = allowHosts.some((token) => hostMatchesAllowToken(host, token));
+
+  if (!allowed) {
+    const listText = allowHosts.length ? allowHosts.join(", ") : "(empty)";
+    throw new Error(
+      `HTTP URL is blocked for host '${host}'. Allowed hosts: ${listText}. Use HTTPS or update allowlist.`
+    );
+  }
+}
+
+function formatFetchError(error) {
+  if (!error) return "Unknown network error.";
+
+  if (error.name === "AbortError") {
+    return `Subscription request timeout (${SUBSCRIPTION_FETCH_TIMEOUT_MS}ms).`;
+  }
+
+  const text = String(error.message || error);
+  if (/network request failed/i.test(text)) {
+    return "Network request failed. Check internet, DNS, SSL, and domain availability.";
+  }
+
+  return text;
+}
+
+async function fetchSubscriptionText(urlText, allowHostsRaw) {
+  let urlObject;
+  try {
+    urlObject = new URL(String(urlText || "").trim());
+  } catch (_error) {
+    throw new Error("Subscription URL is invalid.");
+  }
+
+  if (urlObject.protocol !== "https:" && urlObject.protocol !== "http:") {
+    throw new Error("Subscription URL must start with https:// or allowed http:// host.");
+  }
+
+  assertHttpHostAllowed(urlObject, allowHostsRaw);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SUBSCRIPTION_FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(urlObject.toString(), {
+      method: "GET",
+      headers: { Accept: "text/plain,*/*" },
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`Subscription URL failed (${response.status} ${response.statusText || ""}).`);
+    }
+
+    const payload = await response.text();
+    if (!payload || !payload.trim()) {
+      throw new Error("Subscription payload is empty.");
+    }
+
+    if (payload.length > MAX_SUBSCRIPTION_CHARS) {
+      throw new Error("Subscription payload is too large.");
+    }
+
+    return payload;
+  } catch (error) {
+    throw new Error(formatFetchError(error));
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function formatEndpointLabel(endpoint) {
+  if (!endpoint) return "";
+  return `${endpoint.host}:${endpoint.port}`;
 }
 
 export function useProxyController() {
@@ -58,7 +162,13 @@ export function useProxyController() {
     logPath: "",
     configPath: "",
     startedAtMs: 0,
-    lastError: ""
+    lastError: "",
+    processExitCode: null,
+    lastProbeTarget: "",
+    lastProbeAtMs: 0,
+    lastProbeLatencyMs: 0,
+    lastProbeOk: false,
+    lastProbeError: ""
   });
 
   useEffect(() => {
@@ -90,7 +200,14 @@ export function useProxyController() {
         setProfile(nextProfile);
         setRunning(Boolean(status.running));
         setStatusDetails(status);
-        setMessage(status.running ? "Tunnel is running" : "Disconnected");
+
+        if (status.running) {
+          setMessage("Tunnel is running");
+        } else if (status.lastError) {
+          setMessage(`Stopped: ${status.lastError}`);
+        } else {
+          setMessage("Disconnected");
+        }
 
         await AsyncStorage.setItem(STORAGE_KEYS.profile, JSON.stringify(nextProfile));
       } catch (error) {
@@ -135,12 +252,7 @@ export function useProxyController() {
     }
 
     if (/^https?:\/\//i.test(text)) {
-      const response = await fetch(text);
-      if (!response.ok) {
-        throw new Error(`Subscription URL failed (${response.status}).`);
-      }
-
-      const payload = await response.text();
+      const payload = await fetchSubscriptionText(text, profile.allowHttpSubscriptionHosts);
       const firstLink = firstLinkFromText(payload);
       return importLinkFromKey(firstLink, sourceLabel);
     }
@@ -232,15 +344,28 @@ export function useProxyController() {
       setStatusDetails(status);
 
       if (status.running) {
-        setMessage("Tunnel is running");
+        if (status.lastProbeError) {
+          setMessage(`Running, but last probe failed: ${status.lastProbeError}`);
+        } else {
+          setMessage("Tunnel is running");
+        }
       } else if (status.lastError) {
         setMessage(`Stopped: ${status.lastError}`);
+      } else if (typeof status.processExitCode === "number") {
+        setMessage(`Core exited with code ${status.processExitCode}`);
       } else {
         setMessage("Disconnected");
       }
     } catch (error) {
       setMessage(`Status read failed: ${error.message}`);
     }
+  }
+
+  async function runServerPreflight(configToUse) {
+    const endpoint = extractPrimaryEndpointFromConfig(configToUse);
+    setMessage(`Checking server ${formatEndpointLabel(endpoint)}...`);
+    await proxyCore.checkServerReachable(endpoint.host, endpoint.port, SERVER_PROBE_TIMEOUT_MS);
+    return endpoint;
   }
 
   async function toggleConnection() {
@@ -254,9 +379,20 @@ export function useProxyController() {
         setMessage("Disconnected");
       } else {
         const normalized = await save();
+        const endpoint = await runServerPreflight(normalized);
+
         await proxyCore.start(normalized);
-        setRunning(true);
-        setMessage("Connected. SOCKS5 127.0.0.1:10808");
+
+        const statusAfterStart = await proxyCore.getStatus();
+        setRunning(Boolean(statusAfterStart.running));
+        setStatusDetails(statusAfterStart);
+
+        if (!statusAfterStart.running) {
+          const stopReason = statusAfterStart.lastError || "Core stopped right after start.";
+          throw new Error(stopReason);
+        }
+
+        setMessage(`Connected. SOCKS5 127.0.0.1:10808 via ${formatEndpointLabel(endpoint)}`);
       }
 
       await refreshStatus();

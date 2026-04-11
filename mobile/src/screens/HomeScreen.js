@@ -16,7 +16,15 @@ import SignalOrb from "../components/SignalOrb";
 import StatusBadge from "../components/StatusBadge";
 import { useProxyController } from "../state/useProxyController";
 
-function LabeledInput({ label, value, onChangeText, placeholder, keyboardType, autoCapitalize = "none" }) {
+function LabeledInput({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  keyboardType,
+  autoCapitalize = "none",
+  multiline = false
+}) {
   return (
     <View style={styles.inputWrap}>
       <Text style={styles.inputLabel}>{label}</Text>
@@ -28,7 +36,9 @@ function LabeledInput({ label, value, onChangeText, placeholder, keyboardType, a
         keyboardType={keyboardType}
         autoCapitalize={autoCapitalize}
         autoCorrect={false}
-        style={styles.input}
+        multiline={multiline}
+        textAlignVertical={multiline ? "top" : "center"}
+        style={[styles.input, multiline ? styles.inputMultiline : null]}
       />
     </View>
   );
@@ -152,6 +162,14 @@ export default function HomeScreen() {
           <Text style={styles.message}>{message}</Text>
           <Text style={styles.endpoint}>SOCKS5 endpoint: {statusDetails.socks}</Text>
           {connectedSinceText ? <Text style={styles.connectedSince}>Running since {connectedSinceText}</Text> : null}
+          {statusDetails.lastProbeTarget ? (
+            <Text style={styles.metaText}>
+              Last probe: {statusDetails.lastProbeOk ? "OK" : "FAILED"} {statusDetails.lastProbeTarget}
+            </Text>
+          ) : null}
+          {typeof statusDetails.processExitCode === "number" ? (
+            <Text style={styles.metaText}>Last core exit code: {statusDetails.processExitCode}</Text>
+          ) : null}
         </View>
 
         <View style={styles.panel}>
@@ -221,6 +239,34 @@ export default function HomeScreen() {
                 value={profile.sni}
                 onChangeText={(value) => updateSimpleField("sni", value)}
                 placeholder="vpn.example.com"
+              />
+              <LabeledInput
+                label="Bypass domains (direct)"
+                value={profile.bypassDomains}
+                onChangeText={(value) => updateSimpleField("bypassDomains", value)}
+                placeholder="geosite:private,domain:intranet.local,*.corp"
+                multiline
+              />
+              <LabeledInput
+                label="Bypass IP/CIDR (direct)"
+                value={profile.bypassCidrs}
+                onChangeText={(value) => updateSimpleField("bypassCidrs", value)}
+                placeholder="geoip:private,10.0.0.0/8,192.168.0.0/16"
+                multiline
+              />
+              <LabeledInput
+                label="Blocked domains"
+                value={profile.blockedDomains}
+                onChangeText={(value) => updateSimpleField("blockedDomains", value)}
+                placeholder="geosite:category-ads-all,domain:tracker.example"
+                multiline
+              />
+              <LabeledInput
+                label="HTTP subscription host allowlist"
+                value={profile.allowHttpSubscriptionHosts}
+                onChangeText={(value) => updateSimpleField("allowHttpSubscriptionHosts", value)}
+                placeholder="localhost,10.0.2.2"
+                multiline
               />
 
               <Text style={styles.inputLabel}>Transport security</Text>
@@ -331,6 +377,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: "center"
   },
+  metaText: {
+    marginTop: 4,
+    color: "#8ea5cb",
+    fontSize: 11,
+    textAlign: "center"
+  },
   panel: {
     marginHorizontal: 14,
     marginTop: -6,
@@ -439,6 +491,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#0f1933",
     backgroundColor: "#ffffff"
+  },
+  inputMultiline: {
+    minHeight: 68
   },
   securityRow: {
     flexDirection: "row",

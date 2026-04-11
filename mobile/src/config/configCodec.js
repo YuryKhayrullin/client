@@ -4,6 +4,35 @@ const { DEFAULT_PROFILE, buildVlessConfig } = require("./defaultConfig");
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+const DOMAIN_TOKEN_PATTERN =
+  /^(?:geosite:[\w-]+|regexp:.+|keyword:[^,\s]+|full:[^,\s]+|domain:[^,\s]+|\*\.[^,\s]+|[a-z0-9.-]+(?:\.[a-z0-9.-]+)+|localhost)$/i;
+
+const CIDR_TOKEN_PATTERN =
+  /^(?:geoip:[\w-]+|(?:\d{1,3}\.){3}\d{1,3}(?:\/(?:[0-9]|[1-2][0-9]|3[0-2]))?|[0-9a-f:]+(?:\/(?:[0-9]|[1-9][0-9]|1[0-1][0-9]|12[0-8]))?)$/i;
+
+const HOST_TOKEN_PATTERN = /^(?:localhost|(?:\d{1,3}\.){3}\d{1,3}|[a-z0-9-]+(?:\.[a-z0-9-]+)+)$/i;
+
+function splitList(value) {
+  return String(value || "")
+    .split(/[\n,;]/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeListString(value) {
+  return splitList(value).join(",");
+}
+
+function validateTokenList(value, pattern, label) {
+  const tokens = splitList(value);
+  for (const token of tokens) {
+    if (!pattern.test(token)) {
+      throw new Error(`${label} has invalid token: ${token}`);
+    }
+  }
+  return tokens;
+}
+
 function normalizeJsonConfig(input) {
   const parsed = JSON.parse(String(input));
 
@@ -26,7 +55,13 @@ function sanitizeProfile(raw) {
     sni: String(raw?.sni || raw?.host || raw?.server || DEFAULT_PROFILE.sni).trim(),
     uuid: String(raw?.uuid || DEFAULT_PROFILE.uuid).trim(),
     security: String(raw?.security || DEFAULT_PROFILE.security).trim().toLowerCase(),
-    alpn: String(raw?.alpn || DEFAULT_PROFILE.alpn).trim()
+    alpn: String(raw?.alpn || DEFAULT_PROFILE.alpn).trim(),
+    bypassDomains: normalizeListString(raw?.bypassDomains ?? DEFAULT_PROFILE.bypassDomains),
+    bypassCidrs: normalizeListString(raw?.bypassCidrs ?? DEFAULT_PROFILE.bypassCidrs),
+    blockedDomains: normalizeListString(raw?.blockedDomains ?? DEFAULT_PROFILE.blockedDomains),
+    allowHttpSubscriptionHosts: normalizeListString(
+      raw?.allowHttpSubscriptionHosts ?? DEFAULT_PROFILE.allowHttpSubscriptionHosts
+    )
   };
 
   const parsedPort = Number(merged.port);
@@ -46,6 +81,15 @@ function sanitizeProfile(raw) {
     throw new Error("Security must be tls or none.");
   }
 
+  validateTokenList(merged.bypassDomains, DOMAIN_TOKEN_PATTERN, "Bypass domains");
+  validateTokenList(merged.bypassCidrs, CIDR_TOKEN_PATTERN, "Bypass CIDRs");
+  validateTokenList(merged.blockedDomains, DOMAIN_TOKEN_PATTERN, "Blocked domains");
+  validateTokenList(
+    merged.allowHttpSubscriptionHosts,
+    HOST_TOKEN_PATTERN,
+    "HTTP subscription host allowlist"
+  );
+
   return {
     ...merged,
     port: parsedPort,
@@ -58,10 +102,40 @@ function profileToConfigText(profile) {
   return JSON.stringify(buildVlessConfig(safe), null, 2);
 }
 
+function extractRoutingListsFromConfig(parsedConfig) {
+  const bypassDomainTokens = [];
+  const bypassIpTokens = [];
+  const blockedDomainTokens = [];
+
+  const rules = Array.isArray(parsedConfig?.routing?.rules) ? parsedConfig.routing.rules : [];
+  for (const rule of rules) {
+    if (!rule || rule.type !== "field") continue;
+
+    if (rule.outboundTag === "direct" && Array.isArray(rule.domain)) {
+      bypassDomainTokens.push(...rule.domain.map((item) => String(item).trim()).filter(Boolean));
+    }
+
+    if (rule.outboundTag === "direct" && Array.isArray(rule.ip)) {
+      bypassIpTokens.push(...rule.ip.map((item) => String(item).trim()).filter(Boolean));
+    }
+
+    if (rule.outboundTag === "block" && Array.isArray(rule.domain)) {
+      blockedDomainTokens.push(...rule.domain.map((item) => String(item).trim()).filter(Boolean));
+    }
+  }
+
+  return {
+    bypassDomains: bypassDomainTokens.join(","),
+    bypassCidrs: bypassIpTokens.join(","),
+    blockedDomains: blockedDomainTokens.join(",")
+  };
+}
+
 function configTextToProfile(configText) {
   try {
     const parsed = JSON.parse(String(configText));
     const firstOutbound = Array.isArray(parsed.outbounds) ? parsed.outbounds[0] : null;
+    const routingLists = extractRoutingListsFromConfig(parsed);
 
     if (!firstOutbound) {
       return null;
@@ -85,7 +159,8 @@ function configTextToProfile(configText) {
         security,
         alpn: Array.isArray(firstOutbound.streamSettings?.tlsSettings?.alpn)
           ? firstOutbound.streamSettings.tlsSettings.alpn.join(",")
-          : DEFAULT_PROFILE.alpn
+          : DEFAULT_PROFILE.alpn,
+        ...routingLists
       });
     }
 
@@ -110,7 +185,8 @@ function configTextToProfile(configText) {
         security,
         alpn: Array.isArray(firstOutbound.streamSettings?.tlsSettings?.alpn)
           ? firstOutbound.streamSettings.tlsSettings.alpn.join(",")
-          : DEFAULT_PROFILE.alpn
+          : DEFAULT_PROFILE.alpn,
+        ...routingLists
       });
     }
 
@@ -158,7 +234,7 @@ function parseVmessUrl(input) {
     port: Number(parsed.port || 443),
     uuid: parsed.id,
     sni: parsed.sni || parsed.host || parsed.add,
-    security: parsed.tls === "tls" || parsed.scy === "tls" ? "tls" : (parsed.security || parsed.tls || "none"),
+    security: parsed.tls === "tls" || parsed.scy === "tls" ? "tls" : parsed.security || parsed.tls || "none",
     alpn: parsed.alpn || DEFAULT_PROFILE.alpn
   });
 }
@@ -188,18 +264,69 @@ function extractProxyLinksFromText(input) {
   const text = String(input || "").trim();
   if (!text) return [];
 
-  const directMatches = text.match(/(?:vless|vmess):\/\/[^\s\"'<>\(\)]+/gi) || [];
+  const directMatches = text.match(/(?:vless|vmess):\/\/[^\s"'<>\(\)]+/gi) || [];
   if (directMatches.length > 0) {
     return directMatches.map((item) => item.trim());
   }
 
   try {
     const decoded = Buffer.from(text, "base64").toString("utf8");
-    const fromDecoded = decoded.match(/(?:vless|vmess):\/\/[^\s\"'<>\(\)]+/gi) || [];
+    const fromDecoded = decoded.match(/(?:vless|vmess):\/\/[^\s"'<>\(\)]+/gi) || [];
     return fromDecoded.map((item) => item.trim());
   } catch (_error) {
     return [];
   }
+}
+
+function extractPrimaryEndpointFromConfig(configText) {
+  const parsed = JSON.parse(String(configText));
+  const outbounds = Array.isArray(parsed?.outbounds) ? parsed.outbounds : [];
+  if (!outbounds.length) {
+    throw new Error("Config has no outbounds.");
+  }
+
+  const preferred = outbounds.find((item) => item?.tag === "proxy") || outbounds[0];
+  if (!preferred || typeof preferred !== "object") {
+    throw new Error("Config outbound is invalid.");
+  }
+
+  const protocol = String(preferred.protocol || "").toLowerCase();
+  let address = "";
+  let port = NaN;
+
+  if (protocol === "vless" || protocol === "vmess") {
+    const node = preferred.settings?.vnext?.[0];
+    address = String(node?.address || "").trim();
+    port = Number(node?.port);
+  } else if (protocol === "trojan") {
+    const node = preferred.settings?.servers?.[0];
+    address = String(node?.address || "").trim();
+    port = Number(node?.port);
+  } else if (protocol === "shadowsocks") {
+    const node = preferred.settings?.servers?.[0] || preferred.settings;
+    address = String(node?.address || node?.server || "").trim();
+    port = Number(node?.port || node?.server_port);
+  } else if (protocol === "socks" || protocol === "http") {
+    const node = preferred.settings?.servers?.[0];
+    address = String(node?.address || "").trim();
+    port = Number(node?.port);
+  } else {
+    throw new Error(`Unsupported outbound protocol for preflight: ${protocol || "unknown"}.`);
+  }
+
+  if (!address) {
+    throw new Error("Config outbound address is empty.");
+  }
+
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error("Config outbound port is invalid.");
+  }
+
+  return {
+    host: address,
+    port,
+    protocol
+  };
 }
 
 module.exports = {
@@ -208,5 +335,6 @@ module.exports = {
   profileToConfigText,
   configTextToProfile,
   importProxyLink,
-  extractProxyLinksFromText
+  extractProxyLinksFromText,
+  extractPrimaryEndpointFromConfig
 };
